@@ -1,0 +1,49 @@
+{
+  "@@locale": "en",
+
+  "appName": "HomeDoc AI",
+
+  "homeGreeting": "How are you feeling today?",
+  "homeStartTriage": "Start AI care guidance",
+  "homeBrowseDoctors": "Browse doctors",
+  "homeUpcomingAppointment": "Upcoming appointment",
+  "homeEmergency": "Emergency",
+
+  "navHome": "Home",
+  "navCare": "Care",
+  "navHealth": "Health",
+  "navProfile": "Profile",
+
+  "aiDisclaimer": "AI guidance, not a diagnosis.",
+  "aiThinking": "Thinking through what you've shared…",
+
+  "aiCareTitle": "AI Care Guidance",
+  "aiCareExplanation": "Describe how you're feeling. AI will suggest a safe next step — it does not diagnose you.",
+  "aiCareSymptomsLabel": "What are you experiencing?",
+  "aiCareSymptomsHint": "e.g. Headache and mild fever since yesterday",
+  "aiCareDurationLabel": "How long have you had these symptoms? (optional)",
+  "aiCareSubmit": "Get care guidance",
+  "aiCareSummaryLabel": "Summary",
+  "aiCareRedFlagsLabel": "Things to watch for",
+  "aiCareEmergencyMessage": "This may need urgent attention",
+  "aiCareEmergencyAction": "Get emergency help",
+  "aiCareEmptySymptomsError": "Please describe what you're experiencing first.",
+  "aiCareStartOver": "Describe something else",
+
+  "errorGeneric": "We couldn't load this right now.",
+  "errorRetry": "Retry",
+  "errorOffline": "You're offline. Some features may be unavailable.",
+  "errorNetwork": "We couldn't reach HomeDoc AI. Please check your connection.",
+  "errorSessionExpired": "Your session has expired. Please sign in again.",
+
+  "emptyAppointments": "No appointments yet — start with how you're feeling.",
+
+  "doctorVerified": "Verified",
+
+  "loginTitle": "Welcome to HomeDoc AI",
+  "loginSubtitle": "Healthcare at your doorstep.",
+  "loginPhoneLabel": "Phone number",
+  "loginContinue": "Continue",
+
+  "comingSoon": "Coming in a later implementation phase"
+}

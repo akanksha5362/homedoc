@@ -1,0 +1,20 @@
+# HomeDoc AI backend — Day 3.2 foundation
+# Pin loosely; tighten once this moves toward production.
+
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pydantic>=2.6
+sqlalchemy>=2.0
+python-jose[cryptography]>=3.3
+passlib[bcrypt]>=1.7
+httpx>=0.27          # used by GeminiProvider for real LLM calls (Day 4+)
+python-multipart>=0.0.9
+
+# Dev/test only
+pytest>=8.0
+pytest-asyncio>=0.23
+
+# Production database driver — NOT required for local dev, which defaults
+# to SQLite (see app/database/session.py). Install this when DATABASE_URL
+# points at a real PostgreSQL instance.
+# psycopg2-binary>=2.9

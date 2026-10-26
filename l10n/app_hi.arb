@@ -1,0 +1,49 @@
+{
+  "@@locale": "hi",
+
+  "appName": "HomeDoc AI",
+
+  "homeGreeting": "आज आप कैसा महसूस कर रहे हैं?",
+  "homeStartTriage": "AI केयर गाइडेंस शुरू करें",
+  "homeBrowseDoctors": "डॉक्टर खोजें",
+  "homeUpcomingAppointment": "आगामी अपॉइंटमेंट",
+  "homeEmergency": "आपातकाल",
+
+  "navHome": "होम",
+  "navCare": "केयर",
+  "navHealth": "स्वास्थ्य",
+  "navProfile": "प्रोफ़ाइल",
+
+  "aiDisclaimer": "यह AI मार्गदर्शन है, निदान नहीं।",
+  "aiThinking": "आपकी जानकारी पर विचार किया जा रहा है…",
+
+  "aiCareTitle": "AI केयर गाइडेंस",
+  "aiCareExplanation": "आप कैसा महसूस कर रहे हैं बताएं। AI एक सुरक्षित अगला कदम सुझाएगा — यह निदान नहीं करता।",
+  "aiCareSymptomsLabel": "आप क्या महसूस कर रहे हैं?",
+  "aiCareSymptomsHint": "जैसे: कल से सिरदर्द और हल्का बुखार",
+  "aiCareDurationLabel": "आपको ये लक्षण कब से हैं? (वैकल्पिक)",
+  "aiCareSubmit": "केयर गाइडेंस प्राप्त करें",
+  "aiCareSummaryLabel": "सारांश",
+  "aiCareRedFlagsLabel": "ध्यान देने योग्य बातें",
+  "aiCareEmergencyMessage": "इसके लिए तुरंत ध्यान देने की आवश्यकता हो सकती है",
+  "aiCareEmergencyAction": "आपातकालीन सहायता प्राप्त करें",
+  "aiCareEmptySymptomsError": "कृपया पहले बताएं कि आप क्या महसूस कर रहे हैं।",
+  "aiCareStartOver": "कुछ और बताएं",
+
+  "errorGeneric": "अभी इसे लोड नहीं किया जा सका।",
+  "errorRetry": "पुनः प्रयास करें",
+  "errorOffline": "आप ऑफ़लाइन हैं। कुछ सुविधाएँ उपलब्ध नहीं हो सकतीं।",
+  "errorNetwork": "HomeDoc AI से संपर्क नहीं हो सका। कृपया अपना कनेक्शन जाँचें।",
+  "errorSessionExpired": "आपका सत्र समाप्त हो गया है। कृपया फिर से साइन इन करें।",
+
+  "emptyAppointments": "अभी तक कोई अपॉइंटमेंट नहीं है — बताएं कि आप कैसा महसूस कर रहे हैं।",
+
+  "doctorVerified": "सत्यापित",
+
+  "loginTitle": "HomeDoc AI में आपका स्वागत है",
+  "loginSubtitle": "आपके दरवाज़े पर स्वास्थ्य सेवा।",
+  "loginPhoneLabel": "फ़ोन नंबर",
+  "loginContinue": "जारी रखें",
+
+  "comingSoon": "यह सुविधा आगामी चरण में उपलब्ध होगी"
+}
