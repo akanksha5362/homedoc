@@ -21,6 +21,8 @@ class AITriageResult extends Equatable {
     required this.isUncertain,
     required this.emergencyDetected,
     this.disclaimer = 'AI guidance, not a diagnosis.',
+    this.suggestedSpecialty,
+    this.whyAssigned,
   });
 
   final String summary;
@@ -39,30 +41,49 @@ class AITriageResult extends Equatable {
 
   final String disclaimer;
 
+  /// Recommended clinical specialty (e.g. "Neurologist", "General Physician").
+  final String? suggestedSpecialty;
+
+  /// Medical rationale explaining why this urgency classification was assigned.
+  final String? whyAssigned;
+
   factory AITriageResult.fromJson(Map<String, dynamic> json) {
+    final urgency = AIUrgency.fromApi(json['urgency'] as String?);
     return AITriageResult(
       summary: json['summary'] as String? ?? '',
-      urgency: AIUrgency.fromApi(json['urgency'] as String?),
+      urgency: urgency,
       recommendation: json['recommendation'] as String? ?? '',
       reasoning: json['reasoning'] as String? ?? '',
-      redFlags: (json['red_flags'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? const [],
+      redFlags:
+      (json['red_flags'] as List<dynamic>?)
+          ?.map((e) => e.toString())
+          .toList() ??
+          const [],
       nextStep: json['next_step'] as String? ?? '',
       isUncertain: json['is_uncertain'] as bool? ?? true, // default to cautious
-      emergencyDetected: json['emergency_detected'] as bool? ?? false,
-      disclaimer: json['disclaimer'] as String? ?? 'AI guidance, not a diagnosis.',
+      emergencyDetected:
+      (json['emergency_detected'] as bool? ?? false) ||
+          urgency == AIUrgency.emergency,
+      disclaimer:
+      json['disclaimer'] as String? ?? 'AI guidance, not a diagnosis.',
+      suggestedSpecialty: json['suggested_specialty'] as String?,
+      whyAssigned:
+      json['why_assigned'] as String? ?? json['reasoning'] as String?,
     );
   }
 
   @override
   List<Object?> get props => [
-        summary,
-        urgency,
-        recommendation,
-        reasoning,
-        redFlags,
-        nextStep,
-        isUncertain,
-        emergencyDetected,
-        disclaimer,
-      ];
+    summary,
+    urgency,
+    recommendation,
+    reasoning,
+    redFlags,
+    nextStep,
+    isUncertain,
+    emergencyDetected,
+    disclaimer,
+    suggestedSpecialty,
+    whyAssigned,
+  ];
 }

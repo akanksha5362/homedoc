@@ -1,12 +1,20 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../shared/models/appointment_model.dart';
 import '../../../../shared/providers/appointment_provider.dart';
+import '../../../../shared/providers/auth_provider.dart';
+import '../../../../shared/services/notification_service.dart';
+import '../../../../shared/providers/doctor_provider.dart';
+import '../../../family/data/models/family_member_model.dart';
+import '../../../family/presentation/providers/family_provider.dart';
 
 class BookAppointmentPage extends ConsumerStatefulWidget {
-  const BookAppointmentPage({super.key});
+  const BookAppointmentPage({super.key, this.initialDoctorId});
+
+  final String? initialDoctorId;
 
   @override
   ConsumerState<BookAppointmentPage> createState() =>
@@ -19,39 +27,6 @@ class _BookAppointmentPageState extends ConsumerState<BookAppointmentPage> {
   static const Color lightTeal = Color(0xFFE6F7F6);
   static const Color darkText = Color(0xFF1F2937);
   static const Color mutedText = Color(0xFF6B7280);
-
-  final List<Map<String, dynamic>> _doctors = [
-    {
-      'name': 'Dr. Ananya Sharma',
-      'specialty': 'General Physician',
-      'fee': 500,
-      'rating': '4.9',
-    },
-    {
-      'name': 'Dr. Rahul Verma',
-      'specialty': 'Cardiologist',
-      'fee': 800,
-      'rating': '4.8',
-    },
-    {
-      'name': 'Dr. Priya Mehta',
-      'specialty': 'Dermatologist',
-      'fee': 600,
-      'rating': '4.9',
-    },
-    {
-      'name': 'Dr. Karan Patel',
-      'specialty': 'Orthopedic',
-      'fee': 700,
-      'rating': '4.7',
-    },
-    {
-      'name': 'Dr. Neha Gupta',
-      'specialty': 'Pediatrician',
-      'fee': 550,
-      'rating': '4.8',
-    },
-  ];
 
   final List<String> _timeSlots = [
     '09:00 AM',
@@ -70,19 +45,20 @@ class _BookAppointmentPageState extends ConsumerState<BookAppointmentPage> {
     'Video Consultation',
   ];
 
-  late Map<String, dynamic> _selectedDoctor;
+  String? _selectedDoctorId;
+  FamilyMemberModel? _selectedFamilyMember;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedDoctorId = widget.initialDoctorId;
+  }
   DateTime _selectedDate = DateUtils.dateOnly(
     DateTime.now().add(const Duration(days: 1)),
   );
   String? _selectedTime;
   String _selectedType = 'Clinic Visit';
   bool _isBooking = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _selectedDoctor = _doctors.first;
-  }
 
   Future<void> _chooseDate() async {
     final today = DateUtils.dateOnly(DateTime.now());
@@ -116,7 +92,22 @@ class _BookAppointmentPageState extends ConsumerState<BookAppointmentPage> {
     }
   }
 
+
   Future<void> _confirmBooking() async {
+    final doctors = ref.read(verifiedDoctorsProvider).valueOrNull ?? [];
+
+    final selectedDoctor = doctors.firstWhere(
+          (doctor) => doctor['doctorId'] == _selectedDoctorId,
+      orElse: () => <String, dynamic>{},
+    );
+
+    if (selectedDoctor.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select an available doctor.')),
+      );
+      return;
+    }
+
     if (_selectedTime == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please select an appointment time.')),
@@ -124,117 +115,195 @@ class _BookAppointmentPageState extends ConsumerState<BookAppointmentPage> {
       return;
     }
 
+    final auth = ref.read(authStateProvider);
+    final patientId = auth.user?.id;
+    final primaryPatientName = auth.user?.displayName ?? '';
+
+    if (patientId == null || patientId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please sign in to book an appointment.')),
+      );
+      return;
+    }
+
+    final isDependent = _selectedFamilyMember != null && _selectedFamilyMember!.id != 'self';
+    final effectivePatientName = isDependent ? _selectedFamilyMember!.name : primaryPatientName;
+    final effectiveFamilyMemberId = isDependent ? _selectedFamilyMember!.id : null;
+    final effectiveRelationship = isDependent ? _selectedFamilyMember!.relationship : 'Self';
+
     setState(() => _isBooking = true);
 
-    await Future<void>.delayed(const Duration(milliseconds: 300));
+    try {
+      final parsedTime = DateFormat('hh:mm a').parse(_selectedTime!);
 
-    if (!mounted) return;
+      final scheduledAt = DateTime(
+        _selectedDate.year,
+        _selectedDate.month,
+        _selectedDate.day,
+        parsedTime.hour,
+        parsedTime.minute,
+      );
 
-    // Combine the selected date and time into one DateTime.
-    final parsedTime = DateFormat('hh:mm a').parse(_selectedTime!);
+      final ConsultationType modelType = switch (_selectedType) {
+        'Clinic Visit' => ConsultationType.clinicVisit,
+        'Home Visit' => ConsultationType.homeVisit,
+        'Video Consultation' => ConsultationType.video,
+        _ => ConsultationType.clinicVisit,
+      };
 
-    final scheduledAt = DateTime(
-      _selectedDate.year,
-      _selectedDate.month,
-      _selectedDate.day,
-      parsedTime.hour,
-      parsedTime.minute,
-    );
+      final firestore = ref.read(firestoreProvider);
+      final appointmentRef = firestore.collection('appointments').doc();
 
-    // Your existing enum doesn't include Clinic Visit.
-    // Keep the actual selected label separately for correct display.
-    final ConsultationType modelType = _selectedType == 'Home Visit'
-        ? ConsultationType.homeVisit
-        : ConsultationType.video;
+      final appointment = AppointmentModel(
+        id: appointmentRef.id,
+        patientId: patientId,
+        patientName: effectivePatientName,
+        familyMemberId: effectiveFamilyMemberId,
+        familyRelationship: effectiveRelationship,
+        doctorId: selectedDoctor['doctorId'] as String,
+        doctorName: selectedDoctor['name'] as String,
+        specialty: selectedDoctor['specialty'] as String,
+        type: modelType,
+        status: AppointmentStatus.booked,
+        scheduledAt: scheduledAt,
+      );
 
-    final appointment = AppointmentModel(
-      id: 'APT-${DateTime.now().microsecondsSinceEpoch}',
-      doctorName: _selectedDoctor['name'] as String,
-      specialty: _selectedDoctor['specialty'] as String,
-      type: modelType,
-      status: AppointmentStatus.booked,
-      scheduledAt: scheduledAt,
-    );
+      // Save the appointment permanently in Firestore.
+      await appointmentRef.set({
+        'appointmentId': appointmentRef.id,
+        'patientId': patientId,
+        'patientName': effectivePatientName,
+        'familyMemberId': effectiveFamilyMemberId,
+        'familyRelationship': effectiveRelationship,
+        'doctorId': selectedDoctor['doctorId'],
+        'doctorName': selectedDoctor['name'],
+        'specialty': selectedDoctor['specialty'],
+        'consultationType': modelType.name,
+        'consultationLabel': _selectedType,
+        'status': 'booked',
+        'scheduledAt': Timestamp.fromDate(scheduledAt),
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
 
-    // Add the appointment to shared in-memory state.
-    ref
-        .read(appointmentProvider.notifier)
-        .addAppointment(
-          AppointmentEntry(
-            appointment: appointment,
-            consultationLabel: _selectedType,
-          ),
-        );
+      // Schedule local appointment reminders (24 h + 1 h before).
+      // Request permissions first; failures are silently swallowed inside
+      // NotificationService so booking always succeeds even without permission.
+      await NotificationService.instance.requestPermissions();
+      await NotificationService.instance.scheduleAppointmentReminders(
+        appointmentId: appointmentRef.id,
+        doctorName: selectedDoctor['name'] as String? ?? 'Your Doctor',
+        specialty: selectedDoctor['specialty'] as String? ?? '',
+        consultationType: modelType.name,
+        scheduledAt: scheduledAt,
+      );
 
-    setState(() => _isBooking = false);
+      if (!mounted) return;
 
-    if (!mounted) return;
-
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(18),
-              decoration: const BoxDecoration(
-                color: lightTeal,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.check_circle_outline,
-                color: teal,
-                size: 48,
-              ),
-            ),
-            const SizedBox(height: 18),
-            const Text(
-              'Booking Successful!',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: darkText,
-              ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              '${_selectedDoctor['name']}\n'
-              '${DateFormat('EEE, d MMM yyyy').format(scheduledAt)}\n'
-              '$_selectedTime · $_selectedType',
-              textAlign: TextAlign.center,
-              style: const TextStyle(height: 1.7, color: mutedText),
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              'Saved in this running app session only. '
-              'No server request or payment has been made.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12, color: mutedText),
-            ),
-            const SizedBox(height: 18),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                style: FilledButton.styleFrom(backgroundColor: teal),
-                onPressed: () {
-                  Navigator.of(dialogContext).pop();
-                  Navigator.of(context).pop();
-                },
-                child: const Text('Done'),
-              ),
-            ),
-          ],
+      // Update local Riverpod state only after Firestore succeeds.
+      ref.read(appointmentProvider.notifier).addAppointment(
+        AppointmentEntry(
+          appointment: appointment,
+          consultationLabel: _selectedType,
         ),
-      ),
-    );
+      );
+
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(22),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(18),
+                decoration: const BoxDecoration(
+                  color: lightTeal,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.check_circle_outline,
+                  color: teal,
+                  size: 48,
+                ),
+              ),
+              const SizedBox(height: 18),
+              const Text(
+                'Booking Successful!',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: darkText,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                '${selectedDoctor['name']}\n'
+                    '${DateFormat('EEE, d MMM yyyy').format(scheduledAt)}\n'
+                    '$_selectedTime · $_selectedType',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  height: 1.7,
+                  color: mutedText,
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Your appointment has been saved.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: mutedText,
+                ),
+              ),
+              const SizedBox(height: 18),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  style: FilledButton.styleFrom(backgroundColor: teal),
+                  onPressed: () {
+                    Navigator.of(dialogContext).pop();
+                    Navigator.of(context).pop();
+                  },
+                  child: const Text('Done'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Booking failed: $error'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isBooking = false);
+      }
+    }
   }
+
 
   @override
   Widget build(BuildContext context) {
+    final doctorsAsync = ref.watch(verifiedDoctorsProvider);
+    final currentDoctors = doctorsAsync.valueOrNull ?? [];
+
+    final selectedDoctor = currentDoctors
+        .cast<Map<String, dynamic>?>()
+        .firstWhere(
+          (doctor) => doctor?['doctorId'] == _selectedDoctorId,
+          orElse: () => currentDoctors.isNotEmpty ? currentDoctors.first : null,
+        );
     return Scaffold(
       backgroundColor: const Color(0xFFF7FAFA),
       appBar: AppBar(
@@ -293,106 +362,162 @@ class _BookAppointmentPageState extends ConsumerState<BookAppointmentPage> {
               ),
             ),
             const SizedBox(height: 24),
-            _sectionTitle('1. Select Doctor'),
+            _sectionTitle('1. Who is this visit for?'),
             const SizedBox(height: 10),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-              decoration: _fieldDecoration(),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<Map<String, dynamic>>(
-                  value: _selectedDoctor,
-                  isExpanded: true,
-                  icon: const Icon(Icons.keyboard_arrow_down, color: teal),
-                  items: _doctors.map((doctor) {
-                    return DropdownMenuItem<Map<String, dynamic>>(
-                      value: doctor,
-                      child: Text(
-                        '${doctor['name']} · ${doctor['specialty']}',
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 13),
-                      ),
-                    );
-                  }).toList(),
-                  onChanged: (doctor) {
-                    if (doctor != null) {
-                      setState(() => _selectedDoctor = doctor);
-                    }
-                  },
+            _buildPatientSelector(),
+            const SizedBox(height: 24),
+            _sectionTitle('2. Select Doctor'),
+            const SizedBox(height: 10),
+
+            doctorsAsync.when(
+              loading: () => const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(25),
+                  child: CircularProgressIndicator(color: teal),
                 ),
               ),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: _fieldDecoration(),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: lightTeal,
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: const Icon(
-                      Icons.person_outline,
-                      color: teal,
-                      size: 28,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+
+              error: (error, stackTrace) => Container(
+                padding: const EdgeInsets.all(16),
+                decoration: _fieldDecoration(),
+                child: const Text(
+                  'Unable to load doctors. Please try again later.',
+                  style: TextStyle(color: Colors.red),
+                ),
+              ),
+
+              data: (doctors) {
+                if (doctors.isEmpty) {
+                  return Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: _fieldDecoration(),
+                    child: const Column(
                       children: [
+                        Icon(
+                          Icons.medical_services_outlined,
+                          size: 40,
+                          color: mutedText,
+                        ),
+                        SizedBox(height: 10),
                         Text(
-                          _selectedDoctor['name'] as String,
-                          style: const TextStyle(
+                          'No verified doctors available',
+                          style: TextStyle(
                             fontWeight: FontWeight.bold,
                             color: darkText,
                           ),
                         ),
-                        const SizedBox(height: 4),
+                        SizedBox(height: 5),
                         Text(
-                          _selectedDoctor['specialty'] as String,
-                          style: const TextStyle(
-                            fontSize: 13,
-                            color: mutedText,
-                          ),
-                        ),
-                        const SizedBox(height: 5),
-                        Row(
-                          children: [
-                            const Icon(
-                              Icons.star_rounded,
-                              size: 17,
-                              color: Color(0xFFF5A623),
-                            ),
-                            const SizedBox(width: 3),
-                            Text(
-                              _selectedDoctor['rating'] as String,
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
+                          'Please check again later.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: mutedText, fontSize: 13),
                         ),
                       ],
                     ),
-                  ),
-                  Text(
-                    '₹${_selectedDoctor['fee']}',
-                    style: const TextStyle(
-                      color: teal,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
+                  );
+                }
+
+                final selectedDoctor = doctors.firstWhere(
+                  (doctor) => doctor['doctorId'] == _selectedDoctorId,
+                  orElse: () => doctors.first,
+                );
+
+                return Column(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 4,
+                      ),
+                      decoration: _fieldDecoration(),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          value: selectedDoctor['doctorId'] as String,
+                          isExpanded: true,
+                          icon: const Icon(
+                            Icons.keyboard_arrow_down,
+                            color: teal,
+                          ),
+                          items: doctors.map((doctor) {
+                            return DropdownMenuItem<String>(
+                              value: doctor['doctorId'] as String,
+                              child: Text(
+                                '${doctor['name']} · ${doctor['specialty']}',
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 13),
+                              ),
+                            );
+                          }).toList(),
+                          onChanged: (doctorId) {
+                            if (doctorId != null) {
+                              setState(() => _selectedDoctorId = doctorId);
+                            }
+                          },
+                        ),
+                      ),
                     ),
-                  ),
-                ],
-              ),
+
+                    const SizedBox(height: 12),
+
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: _fieldDecoration(),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: lightTeal,
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: const Icon(
+                              Icons.person_outline,
+                              color: teal,
+                              size: 28,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  selectedDoctor['name'] as String,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: darkText,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  selectedDoctor['specialty'] as String,
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    color: mutedText,
+                                  ),
+                                ),
+                                const SizedBox(height: 5),
+                                Text(
+                                  selectedDoctor['hospital']?.toString() ??
+                                      'Hospital not added',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: mutedText,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              },
             ),
+
             const SizedBox(height: 24),
-            _sectionTitle('2. Consultation Type'),
+            _sectionTitle('3. Consultation Type'),
             const SizedBox(height: 10),
             ..._consultationTypes.map((type) {
               final selected = _selectedType == type;
@@ -443,7 +568,7 @@ class _BookAppointmentPageState extends ConsumerState<BookAppointmentPage> {
               );
             }),
             const SizedBox(height: 16),
-            _sectionTitle('3. Choose Date'),
+            _sectionTitle('4. Choose Date'),
             const SizedBox(height: 10),
             InkWell(
               borderRadius: BorderRadius.circular(16),
@@ -492,7 +617,7 @@ class _BookAppointmentPageState extends ConsumerState<BookAppointmentPage> {
               ),
             ),
             const SizedBox(height: 24),
-            _sectionTitle('4. Select Time'),
+            _sectionTitle('5. Select Time'),
             const SizedBox(height: 6),
             const Text(
               'Choose your preferred time slot.',
@@ -544,7 +669,16 @@ class _BookAppointmentPageState extends ConsumerState<BookAppointmentPage> {
               decoration: _fieldDecoration(),
               child: Column(
                 children: [
-                  _summaryRow('Doctor', _selectedDoctor['name'] as String),
+                  _summaryRow(
+                    'Patient',
+                    _selectedFamilyMember != null && _selectedFamilyMember!.id != 'self'
+                        ? '${_selectedFamilyMember!.name} (${_selectedFamilyMember!.relationship})'
+                        : '${ref.watch(authStateProvider).user?.displayName ?? "Primary Patient"} (Self)',
+                  ),
+                  _summaryRow(
+                    'Doctor',
+                    selectedDoctor?['name']?.toString() ?? 'No doctor selected',
+                  ),
                   _summaryRow('Consultation', _selectedType),
                   _summaryRow(
                     'Date',
@@ -552,10 +686,10 @@ class _BookAppointmentPageState extends ConsumerState<BookAppointmentPage> {
                   ),
                   _summaryRow('Time', _selectedTime ?? 'Not selected'),
                   const Divider(height: 24),
-                  Row(
+                  const Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text(
+                      Text(
                         'Consultation fee',
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
@@ -563,10 +697,10 @@ class _BookAppointmentPageState extends ConsumerState<BookAppointmentPage> {
                         ),
                       ),
                       Text(
-                        '₹${_selectedDoctor['fee']}',
-                        style: const TextStyle(
+                        'To be confirmed',
+                        style: TextStyle(
                           fontWeight: FontWeight.bold,
-                          fontSize: 20,
+                          fontSize: 16,
                           color: teal,
                         ),
                       ),
@@ -621,6 +755,75 @@ class _BookAppointmentPageState extends ConsumerState<BookAppointmentPage> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildPatientSelector() {
+    final familyAsync = ref.watch(familyMembersProvider);
+
+    return familyAsync.when(
+      data: (members) {
+        if (members.isEmpty) return const SizedBox.shrink();
+        final currentSelection = _selectedFamilyMember ?? members.first;
+
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: members.map((member) {
+              final isSelected = member.id == currentSelection.id;
+              final isSelf = member.id == 'self';
+
+              return Padding(
+                padding: const EdgeInsets.only(right: 10),
+                child: ChoiceChip(
+                  avatar: CircleAvatar(
+                    backgroundColor: isSelected
+                        ? Colors.white
+                        : (isSelf ? lightTeal : const Color(0xFFF1F5F9)),
+                    foregroundColor: isSelected
+                        ? teal
+                        : (isSelf ? teal : const Color(0xFF475569)),
+                    child: Icon(
+                      isSelf
+                          ? Icons.person_rounded
+                          : (member.relationship == 'Child'
+                              ? Icons.child_care_rounded
+                              : (member.relationship == 'Parent'
+                                  ? Icons.elderly_rounded
+                                  : Icons.family_restroom_rounded)),
+                      size: 16,
+                    ),
+                  ),
+                  label: Text(
+                    isSelf ? 'Myself' : '${member.name} (${member.relationship})',
+                    style: TextStyle(
+                      color: isSelected ? Colors.white : darkText,
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                      fontSize: 13,
+                    ),
+                  ),
+                  selected: isSelected,
+                  selectedColor: teal,
+                  backgroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    side: BorderSide(
+                      color: isSelected ? teal : const Color(0xFFE5EEEE),
+                    ),
+                  ),
+                  onSelected: (selected) {
+                    if (selected) {
+                      setState(() => _selectedFamilyMember = member);
+                    }
+                  },
+                ),
+              );
+            }).toList(),
+          ),
+        );
+      },
+      loading: () => const SizedBox.shrink(),
+      error: (_, _) => const SizedBox.shrink(),
     );
   }
 

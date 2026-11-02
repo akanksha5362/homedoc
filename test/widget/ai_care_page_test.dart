@@ -6,6 +6,7 @@ import 'package:homedoc/core/errors/app_exception.dart';
 import 'package:homedoc/core/localization/generated/app_localizations.dart';
 import 'package:homedoc/features/ai_care/data/models/ai_triage_request.dart';
 import 'package:homedoc/features/ai_care/data/models/ai_triage_result.dart';
+import 'package:homedoc/features/ai_care/data/models/conversational_triage_request.dart';
 import 'package:homedoc/features/ai_care/domain/repositories/ai_care_repository.dart';
 import 'package:homedoc/features/ai_care/presentation/pages/ai_care_page.dart';
 import 'package:homedoc/features/ai_care/presentation/providers/ai_care_provider.dart';
@@ -28,6 +29,12 @@ class _ControllableRepository implements AiCareRepository {
     if (nextError != null) throw nextError!;
     return nextResult!;
   }
+
+  @override
+  Future<AITriageResult> analyzeConversationalSymptoms(
+    ConversationalTriageRequest request,
+  ) =>
+      analyzeSymptoms(AITriageRequest(symptoms: request.chiefComplaint));
 }
 
 const _routineResult = AITriageResult(
@@ -107,8 +114,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('This may need urgent attention'), findsOneWidget);
-      expect(find.textContaining('Chest pain'), findsOneWidget);
-      expect(find.text('Get emergency help'), findsOneWidget);
+      expect(find.textContaining('chest pain'), findsOneWidget);
+      expect(find.text('View Emergency Options'), findsOneWidget);
       // The normal AIRecommendationCard (with its disclaimer) must NOT
       // also render — emergency breaks out of the AI UI entirely rather
       // than stacking alongside it.

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:go_router/go_router.dart';
@@ -6,6 +8,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../app/router/route_paths.dart';
 import '../../../../shared/models/appointment_model.dart';
 import '../../../../shared/providers/appointment_provider.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../../chat/presentation/providers/chat_provider.dart';
+import '../../../continuity/presentation/widgets/rebooking_sheet.dart';
+
+import '../../../../shared/providers/auth_provider.dart';
+import '../../../../shared/services/notification_service.dart';
+import '../widgets/reschedule_sheet.dart';
 
 class AppointmentsPage extends ConsumerStatefulWidget {
   const AppointmentsPage({super.key});
@@ -17,53 +26,6 @@ class AppointmentsPage extends ConsumerStatefulWidget {
 class _AppointmentsPageState extends ConsumerState<AppointmentsPage>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
-
-  final List<Map<String, dynamic>> _appointments = [
-    {
-      'id': 'APT001',
-      'doctor': 'Dr. Ananya Sharma',
-      'specialty': 'General Physician',
-      'date': DateTime.now().add(const Duration(days: 1)),
-      'time': '10:30 AM',
-      'type': 'Home Visit',
-      'status': 'Upcoming',
-      'lifecycleStatus': AppointmentStatus.booked,
-      'icon': Icons.medical_services_outlined,
-    },
-    {
-      'id': 'APT002',
-      'doctor': 'Dr. Rahul Verma',
-      'specialty': 'Cardiologist',
-      'date': DateTime.now().add(const Duration(days: 3)),
-      'time': '04:00 PM',
-      'type': 'Clinic Visit',
-      'status': 'Upcoming',
-      'lifecycleStatus': AppointmentStatus.booked,
-      'icon': Icons.favorite_border,
-    },
-    {
-      'id': 'APT003',
-      'doctor': 'Dr. Priya Mehta',
-      'specialty': 'Dermatologist',
-      'date': DateTime.now().subtract(const Duration(days: 5)),
-      'time': '11:00 AM',
-      'type': 'Video Consultation',
-      'status': 'Completed',
-      'lifecycleStatus': AppointmentStatus.completed,
-      'icon': Icons.videocam_outlined,
-    },
-    {
-      'id': 'APT004',
-      'doctor': 'Dr. Karan Patel',
-      'specialty': 'Orthopedic',
-      'date': DateTime.now().subtract(const Duration(days: 2)),
-      'time': '02:30 PM',
-      'type': 'Clinic Visit',
-      'status': 'Cancelled',
-      'lifecycleStatus': AppointmentStatus.cancelled,
-      'icon': Icons.accessibility_new,
-    },
-  ];
 
   static const Color primaryTeal = Color(0xFF007A8A);
   static const Color accentTeal = Color(0xFF14B8A6);
@@ -112,129 +74,112 @@ class _AppointmentsPageState extends ConsumerState<AppointmentsPage>
       AppointmentStatus.inConsultation => 'In Consultation',
       AppointmentStatus.completed => 'Completed',
       AppointmentStatus.cancelled => 'Cancelled',
+      AppointmentStatus.rejected => 'Rejected',
     };
   }
 
-  AppointmentStatus _currentStatus(Map<String, dynamic> appointment) {
-    final id = appointment['id'] as String;
-
-    if (appointment['shared'] == true) {
-      final entries = ref.read(appointmentProvider);
-
-      for (final entry in entries) {
-        if (entry.appointment.id == id) {
-          return entry.appointment.status;
-        }
-      }
-
-      return AppointmentStatus.booked;
-    }
-
-    // Find the ORIGINAL demo appointment, not its display copy.
-    final original = _appointments.firstWhere((item) => item['id'] == id);
-
-    return original['lifecycleStatus'] as AppointmentStatus;
-  }
 
   String _tabStatus(AppointmentStatus status) {
     return switch (status) {
       AppointmentStatus.completed => 'Completed',
-      AppointmentStatus.cancelled => 'Cancelled',
+      AppointmentStatus.cancelled || AppointmentStatus.rejected => 'Cancelled',
       _ => 'Upcoming',
     };
   }
 
   List<Map<String, dynamic>> _appointmentsFor(String status) {
-    final sharedEntries = ref.watch(appointmentProvider);
+    final appointments =
+        ref.watch(patientAppointmentsProvider).valueOrNull ?? [];
 
-    final sharedAppointments = sharedEntries.map((entry) {
-      final appointment = entry.appointment;
+    final filteredAppointments = appointments
+        .where((appointment) {
+          final lifecycleStatus =
+              appointment['lifecycleStatus'] as AppointmentStatus;
 
-      return <String, dynamic>{
-        'id': appointment.id,
-        'doctor': appointment.doctorName,
-        'specialty': appointment.specialty,
-        'date': appointment.scheduledAt,
-        'time': DateFormat('hh:mm a').format(appointment.scheduledAt),
-        'type': entry.consultationLabel,
-        'status': _tabStatus(appointment.status),
-        'lifecycleStatus': appointment.status,
-        'icon': switch (appointment.type) {
-          ConsultationType.homeVisit => Icons.home_outlined,
-          ConsultationType.video => Icons.videocam_outlined,
-        },
-        'shared': true,
-      };
-    }).toList();
+          return _tabStatus(lifecycleStatus) == status;
+        })
+        .map((appointment) {
+          final lifecycleStatus =
+              appointment['lifecycleStatus'] as AppointmentStatus;
 
-    // Update demo appointment display status from its lifecycle status.
-    final demoAppointments = _appointments.map((appointment) {
-      final lifecycle = appointment['lifecycleStatus'] as AppointmentStatus;
-      return <String, dynamic>{...appointment, 'status': _tabStatus(lifecycle)};
-    }).toList();
-
-    final allAppointments = [...demoAppointments, ...sharedAppointments];
-
-    final filtered = allAppointments
-        .where((appointment) => appointment['status'] == status)
+          return {...appointment, 'status': _tabStatus(lifecycleStatus)};
+        })
         .toList();
 
-    filtered.sort((a, b) {
-      final aDate = a['date'] as DateTime;
-      final bDate = b['date'] as DateTime;
+    filteredAppointments.sort((a, b) {
+      final dateA = a['date'] as DateTime;
+      final dateB = b['date'] as DateTime;
 
-      return status == 'Upcoming'
-          ? aDate.compareTo(bDate)
-          : bDate.compareTo(aDate);
+      return dateA.compareTo(dateB);
     });
 
-    return filtered;
+    return filteredAppointments;
   }
 
-  void _cancelAppointment(Map<String, dynamic> appointment) {
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Cancel appointment?'),
-        content: Text(
-          'Are you sure you want to cancel your appointment with '
-          '${appointment['doctor']}?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Keep appointment'),
+  Future<void> _cancelAppointment(Map<String, dynamic> appointment) async {
+    unawaited(
+      showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Cancel appointment?'),
+          content: Text(
+            'Are you sure you want to cancel your appointment with '
+            '${appointment['doctor']}?',
           ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade600),
-            onPressed: () {
-              if (appointment['shared'] == true) {
-                ref
-                    .read(appointmentProvider.notifier)
-                    .updateStatus(
-                      appointment['id'] as String,
-                      AppointmentStatus.cancelled,
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Keep appointment'),
+            ),
+            FilledButton(
+              style:
+                  FilledButton.styleFrom(backgroundColor: Colors.red.shade600),
+              onPressed: () async {
+                final appointmentId = appointment['id'] as String;
+
+                try {
+                  final firestore = ref.read(firestoreProvider);
+
+                  await firestore
+                      .collection('appointments')
+                      .doc(appointmentId)
+                      .update({
+                        'status': 'cancelled',
+                        'updatedAt': FieldValue.serverTimestamp(),
+                      });
+
+                  // Cancel local appointment reminders so they don't
+                  // fire after the appointment has been cancelled.
+                  await NotificationService.instance
+                      .cancelAppointmentReminders(appointmentId);
+
+                  if (dialogContext.mounted) {
+                    Navigator.pop(dialogContext);
+                  }
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Appointment cancelled successfully.'),
+                      ),
                     );
-              } else {
-                setState(() {
-                  final original = _appointments.firstWhere(
-                    (item) => item['id'] == appointment['id'],
-                  );
-                  original['lifecycleStatus'] = AppointmentStatus.cancelled;
-                });
-              }
-
-              Navigator.pop(dialogContext);
-
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Appointment cancelled successfully.'),
-                ),
-              );
-            },
-            child: const Text('Cancel appointment'),
-          ),
-        ],
+                  }
+                } catch (error) {
+                  if (dialogContext.mounted) {
+                    Navigator.pop(dialogContext);
+                  }
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Unable to cancel appointment: $error'),
+                      ),
+                    );
+                  }
+                }
+              },
+              child: const Text('Cancel appointment'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -245,26 +190,29 @@ class _AppointmentsPageState extends ConsumerState<AppointmentsPage>
         : _otherConsultationSteps;
   }
 
-  void _advanceStatus(
-    Map<String, dynamic> appointment,
-    AppointmentStatus nextStatus,
-    StateSetter setSheetState,
-  ) {
-    final id = appointment['id'] as String;
 
-    if (appointment['shared'] == true) {
-      // Riverpod updates the shared appointment state.
-      ref.read(appointmentProvider.notifier).updateStatus(id, nextStatus);
-    } else {
-      // Update the local demo appointment.
-      setState(() {
-        final original = _appointments.firstWhere((item) => item['id'] == id);
-        original['lifecycleStatus'] = nextStatus;
-      });
+  void _showRebookingSheet(Map<String, dynamic> appointment) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => RebookingSheet(appointment: appointment),
+    );
+  }
 
-      // Immediately rebuild the bottom sheet for demo appointments.
-      setSheetState(() {});
-    }
+  void _showRescheduleSheet(Map<String, dynamic> appointment) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => RescheduleSheet(appointment: appointment),
+    );
   }
 
   void _showDetails(Map<String, dynamic> appointment) {
@@ -274,168 +222,307 @@ class _AppointmentsPageState extends ConsumerState<AppointmentsPage>
       showDragHandle: true,
       backgroundColor: Colors.white,
       builder: (sheetContext) {
-        return StatefulBuilder(
-          builder: (context, setSheetState) {
-            return Consumer(
-              builder: (context, sheetRef, child) {
-                // WATCH instead of READ so the sheet rebuilds on updates.
-                final entries = sheetRef.watch(appointmentProvider);
+        return Consumer(
+          builder: (context, sheetRef, child) {
+            // Listen to Firestore so the timeline can update
+            // when the doctor changes the appointment status.
+            final appointmentsAsync = sheetRef.watch(
+              patientAppointmentsProvider,
+            );
 
-                final currentStatus = appointment['shared'] == true
-                    ? entries
-                          .firstWhere(
-                            (entry) =>
-                                entry.appointment.id == appointment['id'],
-                          )
-                          .appointment
-                          .status
-                    : _currentStatus(appointment);
+            final latestAppointments = appointmentsAsync.valueOrNull ?? [];
 
-                final steps = _stepsFor(appointment);
-                final isCancelled =
-                    currentStatus == AppointmentStatus.cancelled;
-                final currentIndex = steps.indexOf(currentStatus);
-                final isCompleted =
-                    currentStatus == AppointmentStatus.completed;
-                final canAdvance =
-                    !isCancelled && !isCompleted && currentIndex >= 0;
+            // Safely find the latest version of this appointment.
+            final matchingAppointments = latestAppointments.where(
+              (item) => item['id'] == appointment['id'],
+            );
 
-                final date = DateFormat(
-                  'EEEE, d MMM yyyy',
-                ).format(appointment['date'] as DateTime);
+            final currentAppointment = matchingAppointments.isNotEmpty
+                ? matchingAppointments.first
+                : appointment;
 
-                return SafeArea(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(24, 8, 24, 28),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Appointment Details',
-                          style: TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                            color: darkText,
-                          ),
-                        ),
-                        const SizedBox(height: 20),
+            final currentStatus =
+                currentAppointment['lifecycleStatus'] as AppointmentStatus? ??
+                AppointmentStatus.booked;
 
-                        _detailRow(
-                          'Appointment ID',
-                          appointment['id'].toString(),
-                        ),
-                        _detailRow('Doctor', appointment['doctor'].toString()),
-                        _detailRow(
-                          'Specialty',
-                          appointment['specialty'].toString(),
-                        ),
-                        _detailRow('Date', date),
-                        _detailRow('Time', appointment['time'].toString()),
-                        _detailRow(
-                          'Consultation',
-                          appointment['type'].toString(),
-                        ),
-                        _detailRow(
-                          'Current Status',
-                          _statusLabel(currentStatus),
-                        ),
+            final steps = _stepsFor(currentAppointment);
 
-                        const SizedBox(height: 24),
-                        const Text(
-                          'Appointment Progress',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: darkText,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
+            final isCancelled =
+                currentStatus == AppointmentStatus.cancelled ||
+                currentStatus == AppointmentStatus.rejected;
 
-                        if (isCancelled)
-                          _terminalStatusMessage(
-                            icon: Icons.cancel_outlined,
-                            color: Colors.red.shade600,
-                            message: 'This appointment has been cancelled.',
-                          )
-                        else
-                          ...steps.asMap().entries.map((entry) {
-                            final index = entry.key;
-                            final step = entry.value;
-                            final isCurrent = step == currentStatus;
-                            final isPast =
-                                currentIndex >= 0 && index < currentIndex;
-                            final isLast = index == steps.length - 1;
+            final currentIndex = steps.indexOf(currentStatus);
 
-                            return _timelineStep(
-                              label: _statusLabel(step),
-                              isCurrent: isCurrent,
-                              isPast: isPast,
-                              isLast: isLast,
-                            );
-                          }),
+            final isCompleted = currentStatus == AppointmentStatus.completed;
 
-                        if (isCompleted)
-                          _terminalStatusMessage(
-                            icon: Icons.check_circle_outline,
-                            color: Colors.green.shade700,
-                            message: 'This appointment is completed.',
-                          ),
+            final date = DateFormat(
+              'EEEE, d MMM yyyy',
+            ).format(currentAppointment['date'] as DateTime);
 
-                        const SizedBox(height: 20),
-
-                        if (canAdvance)
-                          SizedBox(
-                            width: double.infinity,
-                            child: FilledButton.icon(
-                              onPressed: () {
-                                final nextIndex = currentIndex + 1;
-                                if (nextIndex >= steps.length) return;
-
-                                _advanceStatus(
-                                  appointment,
-                                  steps[nextIndex],
-                                  setSheetState,
-                                );
-                              },
-                              style: FilledButton.styleFrom(
-                                backgroundColor: primaryTeal,
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 14,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                              icon: const Icon(Icons.arrow_forward),
-                              label: Text(
-                                'Advance to ${_statusLabel(steps[currentIndex + 1])}',
-                              ),
-                            ),
-                          ),
-
-                        const SizedBox(height: 10),
-                        SizedBox(
-                          width: double.infinity,
-                          child: OutlinedButton(
-                            onPressed: () => Navigator.pop(sheetContext),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: primaryTeal,
-                              side: const BorderSide(color: accentTeal),
-                              padding: const EdgeInsets.symmetric(vertical: 13),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                            child: const Text('Close'),
-                          ),
-                        ),
-                      ],
+            return SafeArea(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(24, 8, 24, 28),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Appointment Details',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: darkText,
+                      ),
                     ),
-                  ),
-                );
-              },
+                    const SizedBox(height: 20),
+
+                    _detailRow(
+                      'Appointment ID',
+                      currentAppointment['id'].toString(),
+                    ),
+                    _detailRow(
+                      'Doctor',
+                      currentAppointment['doctor'].toString(),
+                    ),
+                    _detailRow(
+                      'Specialty',
+                      currentAppointment['specialty'].toString(),
+                    ),
+                    _detailRow('Date', date),
+                    _detailRow('Time', currentAppointment['time'].toString()),
+                    _detailRow(
+                      'Consultation',
+                      currentAppointment['type'].toString(),
+                    ),
+                    _detailRow('Current Status', _statusLabel(currentStatus)),
+
+                    if (currentAppointment['consultationType'] == 'homeVisit' &&
+                        !isCancelled &&
+                        !isCompleted) ...[
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          onPressed: () {
+                            final trackingAppointment =
+                                Map<String, dynamic>.from(currentAppointment);
+                            Navigator.of(sheetContext).pop();
+                            context.push(
+                              RoutePaths.patientDoctorTracking,
+                              extra: trackingAppointment,
+                            );
+                          },
+                          icon: const Icon(Icons.location_on_outlined),
+                          label: const Text('Track doctor'),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: primaryTeal,
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+
+                    if ((currentAppointment['consultationType'] == 'video' ||
+                            currentAppointment['type'] == 'Video Consultation' ||
+                            currentAppointment['type'] == 'Video') &&
+                        !isCancelled &&
+                        !isCompleted) ...[
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          onPressed: () {
+                            final videoAppointment =
+                                Map<String, dynamic>.from(currentAppointment);
+                            Navigator.of(sheetContext).pop();
+                            context.push(
+                              RoutePaths.patientVideoConsultation,
+                              extra: videoAppointment,
+                            );
+                          },
+                          icon: const Icon(Icons.videocam_rounded),
+                          label: const Text('Join Video Consultation'),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: primaryTeal,
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+
+                    const SizedBox(height: 24),
+
+                    const Text(
+                      'Appointment Progress',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: darkText,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    if (isCancelled)
+                      _terminalStatusMessage(
+                        icon: Icons.cancel_outlined,
+                        color: Colors.red.shade600,
+                        message: currentStatus == AppointmentStatus.rejected
+                            ? 'This appointment has been rejected.'
+                            : 'This appointment has been cancelled.',
+                      )
+                    else
+                      ...steps.asMap().entries.map((entry) {
+                        final index = entry.key;
+                        final step = entry.value;
+
+                        final isCurrent = step == currentStatus;
+                        final isPast =
+                            currentIndex >= 0 && index < currentIndex;
+                        final isLast = index == steps.length - 1;
+
+                        return _timelineStep(
+                          label: _statusLabel(step),
+                          isCurrent: isCurrent,
+                          isPast: isPast,
+                          isLast: isLast,
+                        );
+                      }),
+
+                    if (isCompleted) ...[
+                      _terminalStatusMessage(
+                        icon: Icons.check_circle_outline,
+                        color: Colors.green.shade700,
+                        message: 'This appointment is completed.',
+                      ),
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF0FDF4),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFBBF7D0)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Row(
+                              children: [
+                                Icon(Icons.event_repeat_rounded,
+                                    color: Color(0xFF16A34A), size: 18),
+                                SizedBox(width: 8),
+                                Text(
+                                  'Appointment Continuity & Rebooking',
+                                  style: TextStyle(
+                                    color: Color(0xFF14532D),
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            const Text(
+                              'Doctor recommended routine follow-up. Maintain continuity with your preferred physician.',
+                              style: TextStyle(
+                                  color: Color(0xFF166534), fontSize: 12),
+                            ),
+                            const SizedBox(height: 10),
+                            SizedBox(
+                              width: double.infinity,
+                              child: FilledButton.icon(
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: primaryTeal,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                      vertical: 10),
+                                ),
+                                onPressed: () {
+                                  Navigator.pop(sheetContext);
+                                  _showRebookingSheet(currentAppointment);
+                                },
+                                icon: const Icon(Icons.event_available_rounded,
+                                    size: 16),
+                                label: const Text('Book Again / Set Reminder'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+
+                    const SizedBox(height: 20),
+
+                    // Message Doctor Action
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFF0D9488),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 13),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        onPressed: () async {
+                          Navigator.pop(sheetContext);
+                          final conv = await ref
+                              .read(chatActionsProvider)
+                              .openOrCreateConversation(
+                                doctorId: (currentAppointment['doctorId'] ??
+                                        currentAppointment['id'] ??
+                                        'demo_doc_1')
+                                    .toString(),
+                                doctorName: (currentAppointment['doctor'] ??
+                                        'Doctor')
+                                    .toString(),
+                                doctorSpecialty: (currentAppointment['specialty'] ??
+                                        'General Medicine')
+                                    .toString(),
+                                appointmentId: (currentAppointment['id'] ?? '')
+                                    .toString(),
+                                appointmentStatus: _statusLabel(currentStatus),
+                              );
+                          if (context.mounted) {
+                            unawaited(
+                              context.push(
+                                RoutePaths.patientChatConversation,
+                                extra: conv,
+                              ),
+                            );
+                          }
+                        },
+                        icon: const Icon(Icons.chat_bubble_outline_rounded,
+                            size: 18),
+                        label: const Text(
+                          'Message Doctor',
+                          style: TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+
+                    // Patients can view progress but cannot advance it.
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(sheetContext),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: primaryTeal,
+                          side: const BorderSide(color: accentTeal),
+                          padding: const EdgeInsets.symmetric(vertical: 13),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: const Text('Close'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             );
           },
         );
@@ -577,10 +664,26 @@ class _AppointmentsPageState extends ConsumerState<AppointmentsPage>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF7FAFA),
+
       appBar: AppBar(
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
+        leading: IconButton(
+          onPressed: () {
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go(RoutePaths.patientHome);
+            }
+          },
+          icon: const Icon(
+            Icons.arrow_back_ios_new_rounded,
+            color: darkText,
+            size: 20,
+          ),
+          tooltip: 'Back to Home',
+        ),
         title: const Text(
           'My Appointments',
           style: TextStyle(color: darkText, fontWeight: FontWeight.bold),
@@ -598,6 +701,7 @@ class _AppointmentsPageState extends ConsumerState<AppointmentsPage>
           ],
         ),
       ),
+
       body: TabBarView(
         controller: _tabController,
         children: [
@@ -619,56 +723,101 @@ class _AppointmentsPageState extends ConsumerState<AppointmentsPage>
   }
 
   Widget _buildAppointmentList(String status) {
-    final appointments = _appointmentsFor(status);
+    final appointmentsAsync = ref.watch(patientAppointmentsProvider);
 
-    if (appointments.isEmpty) {
-      return Center(
+    return appointmentsAsync.when(
+      loading: () =>
+          const Center(child: CircularProgressIndicator(color: primaryTeal)),
+      error: (error, stackTrace) => Center(
         child: Padding(
-          padding: const EdgeInsets.all(28),
+          padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Container(
-                padding: const EdgeInsets.all(22),
-                decoration: const BoxDecoration(
-                  color: lightTeal,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.calendar_month_outlined,
-                  size: 42,
-                  color: primaryTeal,
-                ),
+              const Icon(
+                Icons.error_outline,
+                size: 42,
+                color: Colors.redAccent,
               ),
-              const SizedBox(height: 16),
-              Text(
-                'No $status appointments',
-                style: const TextStyle(
-                  fontSize: 18,
+              const SizedBox(height: 12),
+              const Text(
+                'Unable to load appointments.',
+                style: TextStyle(
+                  fontSize: 16,
                   fontWeight: FontWeight.bold,
                   color: darkText,
                 ),
               ),
               const SizedBox(height: 8),
-              Text(
-                status == 'Upcoming'
-                    ? 'Your scheduled appointments will appear here.'
-                    : 'Your $status appointments will appear here.',
+              const Text(
+                'Please check your internet connection and try again.',
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: mutedText),
+                style: TextStyle(color: mutedText),
+              ),
+              const SizedBox(height: 12),
+              TextButton(
+                onPressed: () {
+                  ref.invalidate(patientAppointmentsProvider);
+                },
+                child: const Text('Retry'),
               ),
             ],
           ),
         ),
-      );
-    }
+      ),
+      data: (_) {
+        final appointments = _appointmentsFor(status);
 
-    return ListView.separated(
-      padding: const EdgeInsets.all(16),
-      itemCount: appointments.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 14),
-      itemBuilder: (context, index) {
-        return _appointmentCard(appointments[index]);
+        if (appointments.isEmpty) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(28),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(22),
+                    decoration: const BoxDecoration(
+                      color: lightTeal,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.calendar_month_outlined,
+                      size: 42,
+                      color: primaryTeal,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'No $status appointments',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: darkText,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    status == 'Upcoming'
+                        ? 'Your scheduled appointments will appear here.'
+                        : 'Your $status appointments will appear here.',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: mutedText),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return ListView.separated(
+          padding: const EdgeInsets.all(16),
+          itemCount: appointments.length,
+          separatorBuilder: (_, _) => const SizedBox(height: 14),
+          itemBuilder: (context, index) {
+            return _appointmentCard(appointments[index]);
+          },
+        );
       },
     );
   }
@@ -677,6 +826,7 @@ class _AppointmentsPageState extends ConsumerState<AppointmentsPage>
     final status = appointment['status'] as String;
     final date = appointment['date'] as DateTime;
     final isUpcoming = status == 'Upcoming';
+    final isCompleted = status == 'Completed';
 
     final Color statusColor = switch (status) {
       'Upcoming' => primaryTeal,
@@ -820,9 +970,49 @@ class _AppointmentsPageState extends ConsumerState<AppointmentsPage>
               ),
               if (isUpcoming) ...[
                 const SizedBox(width: 10),
+                // Reschedule button
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => _showRescheduleSheet(appointment),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: primaryTeal,
+                      side: const BorderSide(color: primaryTeal),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    icon: const Icon(Icons.edit_calendar_rounded, size: 15),
+                    label: const Text(
+                      'Reschedule',
+                      style: TextStyle(fontSize: 12.5),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                // Cancel button
                 Expanded(
                   child: FilledButton(
                     onPressed: () => _cancelAppointment(appointment),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Colors.red.shade50,
+                      foregroundColor: Colors.red.shade700,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: BorderSide(color: Colors.red.shade200),
+                      ),
+                    ),
+                    child: const Text(
+                      'Cancel',
+                      style: TextStyle(fontSize: 12.5),
+                    ),
+                  ),
+                ),
+              ] else if (isCompleted) ...[
+                const SizedBox(width: 10),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: () => _showRebookingSheet(appointment),
                     style: FilledButton.styleFrom(
                       backgroundColor: primaryTeal,
                       foregroundColor: Colors.white,
@@ -830,12 +1020,39 @@ class _AppointmentsPageState extends ConsumerState<AppointmentsPage>
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
-                    child: const Text('Cancel'),
+                    icon: const Icon(Icons.event_repeat_rounded, size: 16),
+                    label: const Text('Book Again'),
                   ),
                 ),
               ],
             ],
           ),
+          if (isUpcoming &&
+              (appointment['consultationType'] == 'video' ||
+                  appointment['type'] == 'Video Consultation' ||
+                  appointment['type'] == 'Video')) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: () {
+                  context.push(
+                    RoutePaths.patientVideoConsultation,
+                    extra: Map<String, dynamic>.from(appointment),
+                  );
+                },
+                icon: const Icon(Icons.videocam_rounded, size: 18),
+                label: const Text('Join Video Consultation'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: primaryTeal,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );

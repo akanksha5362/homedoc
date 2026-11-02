@@ -86,6 +86,7 @@ class _UrgencyPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (label, color, bg) = switch (urgency) {
+      AIUrgency.selfCare => ('Self-Care', AppColors.primary, AppColors.primaryContainer),
       AIUrgency.routine => ('Routine', AppColors.textMuted, AppColors.surfaceMuted),
       AIUrgency.soon => ('Soon', AppColors.secondary, AppColors.secondaryContainer),
       AIUrgency.urgent => ('Urgent', AppColors.warning, const Color(0xFFFAF0DA)),

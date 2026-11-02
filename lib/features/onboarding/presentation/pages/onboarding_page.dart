@@ -19,7 +19,6 @@ class _OnboardingPageState extends State<OnboardingPage> {
   static const Color primaryTeal = Color(0xFF14B8A6);
   static const Color darkTeal = Color(0xFF007A8A);
   static const Color veryLightTeal = Color(0xFFE6F7F6);
-  static const Color darkText = Color(0xFF1F2937);
   static const Color mutedText = Color(0xFF6B7280);
 
   final List<OnboardingData> _pages = const [
@@ -83,7 +82,6 @@ class _OnboardingPageState extends State<OnboardingPage> {
 
   @override
   Widget build(BuildContext context) {
-    final page = _pages[_currentPage];
     final isLastPage = _currentPage == _pages.length - 1;
 
     return Scaffold(

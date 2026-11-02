@@ -14,14 +14,21 @@ class AiAssistantRemoteDataSource {
       data: request.toJson(),
       parser: (data) {
         try {
-          if (data is! Map<String, dynamic>) {
-            throw const AIServiceException(debugDetails: 'Non-object agent response body');
+          if (data is! Map) {
+            throw const AIServiceException(
+              debugDetails: 'AI agent response was not a JSON object.',
+            );
           }
-          return AgentResponse.fromJson(data);
+
+          final json = Map<String, dynamic>.from(data);
+
+          return AgentResponse.fromJson(json);
         } on AIServiceException {
           rethrow;
-        } catch (e) {
-          throw AIServiceException(debugDetails: 'Malformed agent response: $e');
+        } catch (error) {
+          throw AIServiceException(
+            debugDetails: 'Unable to parse AI agent response: $error',
+          );
         }
       },
     );

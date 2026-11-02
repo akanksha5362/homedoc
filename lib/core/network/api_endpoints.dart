@@ -24,6 +24,12 @@ class ApiEndpoints {
 
   // /patients
   static const patientMe = '/patients/me';
+  static String patientNotifications(String uid) =>
+      '/patients/$uid/notifications';
+  static String patientNotificationRead(String uid, String notificationId) =>
+      '/patients/$uid/notifications/$notificationId/read';
+  static String patientNotificationsReadAll(String uid) =>
+      '/patients/$uid/notifications/read-all';
 
   // /doctors
   static const doctors = '/doctors';
@@ -44,5 +50,6 @@ class ApiEndpoints {
   // the real, running backend (see backend/README.md); aiTriage's backend
   // was never built and remains contract-only.
   static const aiTriage = '/ai/triage';
+  static const aiConversationalTriage = '/ai/triage/conversational';
   static const aiAgent = '/ai/agent';
 }

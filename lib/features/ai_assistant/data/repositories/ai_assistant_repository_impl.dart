@@ -1,12 +1,14 @@
 import '../../domain/repositories/ai_assistant_repository.dart';
-import '../datasources/ai_assistant_remote_datasource.dart';
+import '../datasources/gemini_ai_datasource.dart';
 import '../models/agent_response.dart';
 
 class AiAssistantRepositoryImpl implements AiAssistantRepository {
-  AiAssistantRepositoryImpl(this._remote);
+  AiAssistantRepositoryImpl(this._gemini);
 
-  final AiAssistantRemoteDataSource _remote;
+  final GeminiAiDataSource _gemini;
 
   @override
-  Future<AgentResponse> sendMessage(AgentRequest request) => _remote.sendMessage(request);
+  Future<AgentResponse> sendMessage(AgentRequest request) {
+    return _gemini.sendMessage(request);
+  }
 }

@@ -18,10 +18,10 @@ void main() {
       expect(redirect, RoutePaths.splash);
     });
 
-    test('redirects signed-out user to /auth', () {
+    test('redirects signed-out user to /role-selection', () {
       const state = AuthState(user: null, isLoading: false);
       final redirect = RouteGuards.redirectFor(location: RoutePaths.patientHome, authState: state);
-      expect(redirect, RoutePaths.auth);
+      expect(redirect, RoutePaths.roleSelection);
     });
 
     test('redirects signed-in patient away from /auth to patient home', () {

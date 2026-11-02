@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:homedoc/core/errors/app_exception.dart';
 import 'package:homedoc/features/ai_care/data/models/ai_triage_request.dart';
 import 'package:homedoc/features/ai_care/data/models/ai_triage_result.dart';
+import 'package:homedoc/features/ai_care/data/models/conversational_triage_request.dart';
 import 'package:homedoc/features/ai_care/domain/repositories/ai_care_repository.dart';
 import 'package:homedoc/features/ai_care/presentation/providers/ai_care_provider.dart';
 import 'package:homedoc/shared/models/ai_urgency.dart';
@@ -17,6 +18,12 @@ class _FakeRepository implements AiCareRepository {
     if (error != null) throw error!;
     return result!;
   }
+
+  @override
+  Future<AITriageResult> analyzeConversationalSymptoms(
+    ConversationalTriageRequest request,
+  ) =>
+      analyzeSymptoms(AITriageRequest(symptoms: request.chiefComplaint));
 }
 
 const _sampleResult = AITriageResult(

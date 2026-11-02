@@ -16,7 +16,8 @@ enum AIUrgency {
   routine,
   soon,
   urgent,
-  emergency;
+  emergency,
+  selfCare;
 
   /// Parses the backend's string value, defaulting to the *safer* (more
   /// urgent) option on anything unrecognized rather than silently downgrading
@@ -31,6 +32,9 @@ enum AIUrgency {
         return AIUrgency.urgent;
       case 'emergency':
         return AIUrgency.emergency;
+      case 'self_care':
+      case 'selfCare':
+        return AIUrgency.selfCare;
       default:
         return AIUrgency.urgent;
     }

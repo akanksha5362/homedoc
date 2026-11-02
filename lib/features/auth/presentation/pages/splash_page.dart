@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
-import '../../../../shared/providers/auth_provider.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../app/router/route_paths.dart';
 
@@ -55,28 +53,6 @@ class _SplashPageState extends ConsumerState<SplashPage>
       context.go(RoutePaths.onboarding);
     });
 
-  }
-
-  Future<void> _finishSplash() async {
-    await Future.delayed(const Duration(milliseconds: 2200));
-
-    if (!mounted) return;
-
-    // If authentication restoration is still running,
-    // wait until Riverpod updates AuthState.
-    final authState = ref.read(authStateProvider);
-
-    if (authState.isLoading) {
-      ref.listenManual<AuthState>(
-        authStateProvider,
-            (previous, next) {
-          if (!next.isLoading && mounted) {
-            // RouterNotifier is already listening to authStateProvider,
-            // so GoRouter will automatically redirect.
-          }
-        },
-      );
-    }
   }
 
   @override
@@ -216,7 +192,7 @@ class _SplashPageState extends ConsumerState<SplashPage>
                       // LOADING INDICATOR
                       // -----------------------------------------------------
 
-                      SizedBox(
+                      const SizedBox(
                         width: 34,
                         height: 34,
                         child: CircularProgressIndicator(

@@ -378,9 +378,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                   // ---------------------------------------------------------
                   // TRUST FEATURES
                   // ---------------------------------------------------------
-                  Row(
+                  const Row(
                     mainAxisAlignment: MainAxisAlignment.center,
-                    children: const [
+                    children: [
                       _TrustItem(
                         icon: Icons.verified_user_outlined,
                         text: 'Secure',
@@ -403,15 +403,15 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                   // ---------------------------------------------------------
                   // TERMS
                   // ---------------------------------------------------------
-                  Text.rich(
+                  const Text.rich(
                     TextSpan(
                       text: 'By continuing, you agree to HomeDoc\'s\n',
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: Color(0xFF8AA5B5),
                         fontSize: 12,
                         height: 1.5,
                       ),
-                      children: const [
+                      children: [
                         TextSpan(
                           text: 'terms and privacy policy.',
                           style: TextStyle(
